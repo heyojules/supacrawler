@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/oapi-codegen/runtime"
 )
@@ -37,6 +38,13 @@ const (
 	CrawlStatusResponseStatusProcessing CrawlStatusResponseStatus = "processing"
 )
 
+// Defines values for GoogleTrendsStatusResponseStatus.
+const (
+	GoogleTrendsStatusResponseStatusCompleted  GoogleTrendsStatusResponseStatus = "completed"
+	GoogleTrendsStatusResponseStatusFailed     GoogleTrendsStatusResponseStatus = "failed"
+	GoogleTrendsStatusResponseStatusProcessing GoogleTrendsStatusResponseStatus = "processing"
+)
+
 // Defines values for ParseCreateRequestOutputFormat.
 const (
 	ParseCreateRequestOutputFormatCsv      ParseCreateRequestOutputFormat = "csv"
@@ -48,63 +56,13 @@ const (
 
 // Defines values for ParseResponseWorkflowStatus.
 const (
-	ParseResponseWorkflowStatusAnalyzing  ParseResponseWorkflowStatus = "analyzing"
-	ParseResponseWorkflowStatusCompleted  ParseResponseWorkflowStatus = "completed"
-	ParseResponseWorkflowStatusCrawling   ParseResponseWorkflowStatus = "crawling"
-	ParseResponseWorkflowStatusExtracting ParseResponseWorkflowStatus = "extracting"
-	ParseResponseWorkflowStatusFailed     ParseResponseWorkflowStatus = "failed"
-	ParseResponseWorkflowStatusFormatting ParseResponseWorkflowStatus = "formatting"
-	ParseResponseWorkflowStatusScraping   ParseResponseWorkflowStatus = "scraping"
-)
-
-// Defines values for ScreenshotCreateRequestBlockResources.
-const (
-	Font       ScreenshotCreateRequestBlockResources = "font"
-	Image      ScreenshotCreateRequestBlockResources = "image"
-	Script     ScreenshotCreateRequestBlockResources = "script"
-	Stylesheet ScreenshotCreateRequestBlockResources = "stylesheet"
-)
-
-// Defines values for ScreenshotCreateRequestDevice.
-const (
-	Custom  ScreenshotCreateRequestDevice = "custom"
-	Desktop ScreenshotCreateRequestDevice = "desktop"
-	Mobile  ScreenshotCreateRequestDevice = "mobile"
-	Tablet  ScreenshotCreateRequestDevice = "tablet"
-)
-
-// Defines values for ScreenshotCreateRequestFormat.
-const (
-	Jpeg ScreenshotCreateRequestFormat = "jpeg"
-	Jpg  ScreenshotCreateRequestFormat = "jpg"
-	Png  ScreenshotCreateRequestFormat = "png"
-	Webp ScreenshotCreateRequestFormat = "webp"
-)
-
-// Defines values for ScreenshotCreateRequestWaitUntil.
-const (
-	Domcontentloaded ScreenshotCreateRequestWaitUntil = "domcontentloaded"
-	Load             ScreenshotCreateRequestWaitUntil = "load"
-	Networkidle      ScreenshotCreateRequestWaitUntil = "networkidle"
-)
-
-// Defines values for ScreenshotGetResponseStatus.
-const (
-	ScreenshotGetResponseStatusCompleted  ScreenshotGetResponseStatus = "completed"
-	ScreenshotGetResponseStatusFailed     ScreenshotGetResponseStatus = "failed"
-	ScreenshotGetResponseStatusProcessing ScreenshotGetResponseStatus = "processing"
-)
-
-// Defines values for ScreenshotJobResponseStatus.
-const (
-	ScreenshotJobResponseStatusCompleted  ScreenshotJobResponseStatus = "completed"
-	ScreenshotJobResponseStatusFailed     ScreenshotJobResponseStatus = "failed"
-	ScreenshotJobResponseStatusProcessing ScreenshotJobResponseStatus = "processing"
-)
-
-// Defines values for ScreenshotJobResponseType.
-const (
-	Screenshot ScreenshotJobResponseType = "screenshot"
+	Analyzing  ParseResponseWorkflowStatus = "analyzing"
+	Completed  ParseResponseWorkflowStatus = "completed"
+	Crawling   ParseResponseWorkflowStatus = "crawling"
+	Extracting ParseResponseWorkflowStatus = "extracting"
+	Failed     ParseResponseWorkflowStatus = "failed"
+	Formatting ParseResponseWorkflowStatus = "formatting"
+	Scraping   ParseResponseWorkflowStatus = "scraping"
 )
 
 // Defines values for GetV1ScrapeParamsFormat.
@@ -119,6 +77,33 @@ const (
 	GetV1ScrapeParamsProxyModeResidential GetV1ScrapeParamsProxyMode = "residential"
 	GetV1ScrapeParamsProxyModeSharedPool  GetV1ScrapeParamsProxyMode = "shared_pool"
 )
+
+// AnalyzeResponse defines model for AnalyzeResponse.
+type AnalyzeResponse struct {
+	// Country Country code used for scraping
+	Country string `json:"country"`
+
+	// Error Error message if scraping failed
+	Error *string `json:"error,omitempty"`
+
+	// ScrapedAt When the data was scraped
+	ScrapedAt time.Time `json:"scraped_at"`
+
+	// ScrapingDuration Time taken to scrape (e.g., "1500ms")
+	ScrapingDuration *string `json:"scraping_duration,omitempty"`
+
+	// Success Whether the scraping was successful
+	Success bool `json:"success"`
+
+	// TimeRange Time range string (e.g., "24h")
+	TimeRange string `json:"time_range"`
+
+	// TotalTrends Total number of trends found
+	TotalTrends int `json:"total_trends"`
+
+	// Trends List of trending topics
+	Trends *[]TrendData `json:"trends,omitempty"`
+}
 
 // CrawlCreateRequest defines model for CrawlCreateRequest.
 type CrawlCreateRequest struct {
@@ -212,6 +197,51 @@ type Error struct {
 	Error   *string `json:"error,omitempty"`
 	Success *bool   `json:"success,omitempty"`
 }
+
+// GoogleTrendsJobResponse defines model for GoogleTrendsJobResponse.
+type GoogleTrendsJobResponse struct {
+	// JobId Unique job identifier
+	JobId string `json:"job_id"`
+
+	// Message Status message
+	Message string `json:"message"`
+
+	// Success Whether the job was queued successfully
+	Success bool `json:"success"`
+}
+
+// GoogleTrendsRequest defines model for GoogleTrendsRequest.
+type GoogleTrendsRequest struct {
+	// Country Country code (e.g., "US", "IN", "GB") or name (optional, auto-inferred from keyword)
+	Country *string `json:"country,omitempty"`
+
+	// Hours Time range in hours (optional, default 24)
+	Hours *int `json:"hours,omitempty"`
+
+	// Keyword Keyword or title to analyze trends for
+	Keyword string `json:"keyword"`
+
+	// Limit Maximum number of results to return (optional, default 25)
+	Limit *int `json:"limit,omitempty"`
+}
+
+// GoogleTrendsStatusResponse defines model for GoogleTrendsStatusResponse.
+type GoogleTrendsStatusResponse struct {
+	// JobId Job identifier
+	JobId string `json:"job_id"`
+
+	// Message Additional status information
+	Message *string `json:"message,omitempty"`
+
+	// Status Current job status
+	Status GoogleTrendsStatusResponseStatus `json:"status"`
+
+	// Success Whether the request was successful
+	Success bool `json:"success"`
+}
+
+// GoogleTrendsStatusResponseStatus Current job status
+type GoogleTrendsStatusResponseStatus string
 
 // PageContent defines model for PageContent.
 type PageContent struct {
@@ -362,97 +392,22 @@ type ScrapeResponse struct {
 	Url      string         `json:"url"`
 }
 
-// ScreenshotCreateRequest defines model for ScreenshotCreateRequest.
-type ScreenshotCreateRequest struct {
-	BlockAds        *bool                                    `json:"block_ads,omitempty"`
-	BlockChats      *bool                                    `json:"block_chats,omitempty"`
-	BlockCookies    *bool                                    `json:"block_cookies,omitempty"`
-	BlockResources  *[]ScreenshotCreateRequestBlockResources `json:"block_resources,omitempty"`
-	BlockTrackers   *bool                                    `json:"block_trackers,omitempty"`
-	ClickSelector   *string                                  `json:"click_selector,omitempty"`
-	Cookies         *[]map[string]interface{}                `json:"cookies,omitempty"`
-	DarkMode        *bool                                    `json:"dark_mode,omitempty"`
-	Delay           *int                                     `json:"delay,omitempty"`
-	Device          *ScreenshotCreateRequestDevice           `json:"device,omitempty"`
-	DeviceScale     *float32                                 `json:"device_scale,omitempty"`
-	DisableJs       *bool                                    `json:"disable_js,omitempty"`
-	Format          *ScreenshotCreateRequestFormat           `json:"format,omitempty"`
-	FullPage        *bool                                    `json:"full_page,omitempty"`
-	HasTouch        *bool                                    `json:"has_touch,omitempty"`
-	Headers         *map[string]string                       `json:"headers,omitempty"`
-	Height          *int                                     `json:"height,omitempty"`
-	HideSelectors   *[]string                                `json:"hide_selectors,omitempty"`
-	HighContrast    *bool                                    `json:"high_contrast,omitempty"`
-	IgnoreHttps     *bool                                    `json:"ignore_https,omitempty"`
-	IsLandscape     *bool                                    `json:"is_landscape,omitempty"`
-	IsMobile        *bool                                    `json:"is_mobile,omitempty"`
-	PrintMode       *bool                                    `json:"print_mode,omitempty"`
-	Quality         *int                                     `json:"quality,omitempty"`
-	ReducedMotion   *bool                                    `json:"reduced_motion,omitempty"`
-	Stream          *bool                                    `json:"stream,omitempty"`
-	Timeout         *int                                     `json:"timeout,omitempty"`
-	Url             string                                   `json:"url"`
-	UserAgent       *string                                  `json:"user_agent,omitempty"`
-	WaitForSelector *string                                  `json:"wait_for_selector,omitempty"`
-	WaitUntil       *ScreenshotCreateRequestWaitUntil        `json:"wait_until,omitempty"`
-	Width           *int                                     `json:"width,omitempty"`
-}
+// TrendData defines model for TrendData.
+type TrendData struct {
+	// Country Country code
+	Country string `json:"country"`
 
-// ScreenshotCreateRequestBlockResources defines model for ScreenshotCreateRequest.BlockResources.
-type ScreenshotCreateRequestBlockResources string
+	// Rank Trend ranking position
+	Rank int `json:"rank"`
 
-// ScreenshotCreateRequestDevice defines model for ScreenshotCreateRequest.Device.
-type ScreenshotCreateRequestDevice string
+	// ScrapedAt When this trend was scraped
+	ScrapedAt time.Time `json:"scraped_at"`
 
-// ScreenshotCreateRequestFormat defines model for ScreenshotCreateRequest.Format.
-type ScreenshotCreateRequestFormat string
+	// TimeRange Time range (e.g., "24h")
+	TimeRange string `json:"time_range"`
 
-// ScreenshotCreateRequestWaitUntil defines model for ScreenshotCreateRequest.WaitUntil.
-type ScreenshotCreateRequestWaitUntil string
-
-// ScreenshotGetResponse defines model for ScreenshotGetResponse.
-type ScreenshotGetResponse struct {
-	JobId    *string             `json:"job_id,omitempty"`
-	Metadata *ScreenshotMetadata `json:"metadata,omitempty"`
-
-	// Screenshot Signed or public URL to the image
-	Screenshot *string                      `json:"screenshot,omitempty"`
-	Status     *ScreenshotGetResponseStatus `json:"status,omitempty"`
-	Success    bool                         `json:"success"`
-
-	// Url Source URL of the page
-	Url *string `json:"url,omitempty"`
-}
-
-// ScreenshotGetResponseStatus defines model for ScreenshotGetResponse.Status.
-type ScreenshotGetResponseStatus string
-
-// ScreenshotJobResponse defines model for ScreenshotJobResponse.
-type ScreenshotJobResponse struct {
-	JobId    string                       `json:"job_id"`
-	Metadata *ScreenshotMetadata          `json:"metadata,omitempty"`
-	Status   *ScreenshotJobResponseStatus `json:"status,omitempty"`
-	Success  bool                         `json:"success"`
-	Type     *ScreenshotJobResponseType   `json:"type,omitempty"`
-	Url      *string                      `json:"url,omitempty"`
-}
-
-// ScreenshotJobResponseStatus defines model for ScreenshotJobResponse.Status.
-type ScreenshotJobResponseStatus string
-
-// ScreenshotJobResponseType defines model for ScreenshotJobResponse.Type.
-type ScreenshotJobResponseType string
-
-// ScreenshotMetadata defines model for ScreenshotMetadata.
-type ScreenshotMetadata struct {
-	Device      *string  `json:"device,omitempty"`
-	DeviceScale *float32 `json:"device_scale,omitempty"`
-	FileSize    *int     `json:"file_size,omitempty"`
-	Format      *string  `json:"format,omitempty"`
-	Height      *int     `json:"height,omitempty"`
-	LoadTime    *int     `json:"load_time,omitempty"`
-	Quality     *int     `json:"quality,omitempty"`
-	Width       *int     `json:"width,omitempty"`
+	// Title Trend title/topic
+	Title string `json:"title"`
 }
 
 // BadRequest defines model for BadRequest.
@@ -475,6 +430,11 @@ type TooManyRequests = Error
 
 // UnprocessableEntity defines model for UnprocessableEntity.
 type UnprocessableEntity = Error
+
+// GetV1AnalyzeParams defines parameters for GetV1Analyze.
+type GetV1AnalyzeParams struct {
+	JobId string `form:"job_id" json:"job_id"`
+}
 
 // GetV1ScrapeParams defines parameters for GetV1Scrape.
 type GetV1ScrapeParams struct {
@@ -501,19 +461,14 @@ type GetV1ScrapeParamsFormat string
 // GetV1ScrapeParamsProxyMode defines parameters for GetV1Scrape.
 type GetV1ScrapeParamsProxyMode string
 
-// GetV1ScreenshotsParams defines parameters for GetV1Screenshots.
-type GetV1ScreenshotsParams struct {
-	JobId string `form:"job_id" json:"job_id"`
-}
+// PostV1AnalyzeJSONRequestBody defines body for PostV1Analyze for application/json ContentType.
+type PostV1AnalyzeJSONRequestBody = GoogleTrendsRequest
 
 // PostV1CrawlJSONRequestBody defines body for PostV1Crawl for application/json ContentType.
 type PostV1CrawlJSONRequestBody = CrawlCreateRequest
 
 // PostV1ParseJSONRequestBody defines body for PostV1Parse for application/json ContentType.
 type PostV1ParseJSONRequestBody = ParseCreateRequest
-
-// PostV1ScreenshotsJSONRequestBody defines body for PostV1Screenshots for application/json ContentType.
-type PostV1ScreenshotsJSONRequestBody = ScreenshotCreateRequest
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -591,6 +546,14 @@ type ClientInterface interface {
 	// GetInternalHealth request
 	GetInternalHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetV1Analyze request
+	GetV1Analyze(ctx context.Context, params *GetV1AnalyzeParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostV1AnalyzeWithBody request with any body
+	PostV1AnalyzeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostV1Analyze(ctx context.Context, body PostV1AnalyzeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PostV1CrawlWithBody request with any body
 	PostV1CrawlWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -612,18 +575,46 @@ type ClientInterface interface {
 
 	// GetV1Scrape request
 	GetV1Scrape(ctx context.Context, params *GetV1ScrapeParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetV1Screenshots request
-	GetV1Screenshots(ctx context.Context, params *GetV1ScreenshotsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostV1ScreenshotsWithBody request with any body
-	PostV1ScreenshotsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	PostV1Screenshots(ctx context.Context, body PostV1ScreenshotsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) GetInternalHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetInternalHealthRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetV1Analyze(ctx context.Context, params *GetV1AnalyzeParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetV1AnalyzeRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostV1AnalyzeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostV1AnalyzeRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostV1Analyze(ctx context.Context, body PostV1AnalyzeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostV1AnalyzeRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -730,42 +721,6 @@ func (c *Client) GetV1Scrape(ctx context.Context, params *GetV1ScrapeParams, req
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetV1Screenshots(ctx context.Context, params *GetV1ScreenshotsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetV1ScreenshotsRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostV1ScreenshotsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostV1ScreenshotsRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostV1Screenshots(ctx context.Context, body PostV1ScreenshotsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostV1ScreenshotsRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
 // NewGetInternalHealthRequest generates requests for GetInternalHealth
 func NewGetInternalHealthRequest(server string) (*http.Request, error) {
 	var err error
@@ -789,6 +744,91 @@ func NewGetInternalHealthRequest(server string) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewGetV1AnalyzeRequest generates requests for GetV1Analyze
+func NewGetV1AnalyzeRequest(server string, params *GetV1AnalyzeParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/analyze")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "job_id", runtime.ParamLocationQuery, params.JobId); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostV1AnalyzeRequest calls the generic PostV1Analyze builder with application/json body
+func NewPostV1AnalyzeRequest(server string, body PostV1AnalyzeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostV1AnalyzeRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPostV1AnalyzeRequestWithBody generates requests for PostV1Analyze with any type of body
+func NewPostV1AnalyzeRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/analyze")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -1230,91 +1270,6 @@ func NewGetV1ScrapeRequest(server string, params *GetV1ScrapeParams) (*http.Requ
 	return req, nil
 }
 
-// NewGetV1ScreenshotsRequest generates requests for GetV1Screenshots
-func NewGetV1ScreenshotsRequest(server string, params *GetV1ScreenshotsParams) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/v1/screenshots")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		queryValues := queryURL.Query()
-
-		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "job_id", runtime.ParamLocationQuery, params.JobId); err != nil {
-			return nil, err
-		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-			return nil, err
-		} else {
-			for k, v := range parsed {
-				for _, v2 := range v {
-					queryValues.Add(k, v2)
-				}
-			}
-		}
-
-		queryURL.RawQuery = queryValues.Encode()
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewPostV1ScreenshotsRequest calls the generic PostV1Screenshots builder with application/json body
-func NewPostV1ScreenshotsRequest(server string, body PostV1ScreenshotsJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewPostV1ScreenshotsRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewPostV1ScreenshotsRequestWithBody generates requests for PostV1Screenshots with any type of body
-func NewPostV1ScreenshotsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/v1/screenshots")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -1361,6 +1316,14 @@ type ClientWithResponsesInterface interface {
 	// GetInternalHealthWithResponse request
 	GetInternalHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetInternalHealthResponse, error)
 
+	// GetV1AnalyzeWithResponse request
+	GetV1AnalyzeWithResponse(ctx context.Context, params *GetV1AnalyzeParams, reqEditors ...RequestEditorFn) (*GetV1AnalyzeResponse, error)
+
+	// PostV1AnalyzeWithBodyWithResponse request with any body
+	PostV1AnalyzeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostV1AnalyzeResponse, error)
+
+	PostV1AnalyzeWithResponse(ctx context.Context, body PostV1AnalyzeJSONRequestBody, reqEditors ...RequestEditorFn) (*PostV1AnalyzeResponse, error)
+
 	// PostV1CrawlWithBodyWithResponse request with any body
 	PostV1CrawlWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostV1CrawlResponse, error)
 
@@ -1382,14 +1345,6 @@ type ClientWithResponsesInterface interface {
 
 	// GetV1ScrapeWithResponse request
 	GetV1ScrapeWithResponse(ctx context.Context, params *GetV1ScrapeParams, reqEditors ...RequestEditorFn) (*GetV1ScrapeResponse, error)
-
-	// GetV1ScreenshotsWithResponse request
-	GetV1ScreenshotsWithResponse(ctx context.Context, params *GetV1ScreenshotsParams, reqEditors ...RequestEditorFn) (*GetV1ScreenshotsResponse, error)
-
-	// PostV1ScreenshotsWithBodyWithResponse request with any body
-	PostV1ScreenshotsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostV1ScreenshotsResponse, error)
-
-	PostV1ScreenshotsWithResponse(ctx context.Context, body PostV1ScreenshotsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostV1ScreenshotsResponse, error)
 }
 
 type GetInternalHealthResponse struct {
@@ -1407,6 +1362,56 @@ func (r GetInternalHealthResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetInternalHealthResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetV1AnalyzeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *struct {
+		union json.RawMessage
+	}
+	JSON404 *NotFound
+}
+
+// Status returns HTTPResponse.Status
+func (r GetV1AnalyzeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetV1AnalyzeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostV1AnalyzeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *struct {
+		union json.RawMessage
+	}
+	JSON400 *BadRequest
+}
+
+// Status returns HTTPResponse.Status
+func (r PostV1AnalyzeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostV1AnalyzeResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1557,52 +1562,6 @@ func (r GetV1ScrapeResponse) StatusCode() int {
 	return 0
 }
 
-type GetV1ScreenshotsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *ScreenshotGetResponse
-	JSON404      *NotFound
-}
-
-// Status returns HTTPResponse.Status
-func (r GetV1ScreenshotsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetV1ScreenshotsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type PostV1ScreenshotsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *ScreenshotJobResponse
-	JSON400      *BadRequest
-}
-
-// Status returns HTTPResponse.Status
-func (r PostV1ScreenshotsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostV1ScreenshotsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
 // GetInternalHealthWithResponse request returning *GetInternalHealthResponse
 func (c *ClientWithResponses) GetInternalHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetInternalHealthResponse, error) {
 	rsp, err := c.GetInternalHealth(ctx, reqEditors...)
@@ -1610,6 +1569,32 @@ func (c *ClientWithResponses) GetInternalHealthWithResponse(ctx context.Context,
 		return nil, err
 	}
 	return ParseGetInternalHealthResponse(rsp)
+}
+
+// GetV1AnalyzeWithResponse request returning *GetV1AnalyzeResponse
+func (c *ClientWithResponses) GetV1AnalyzeWithResponse(ctx context.Context, params *GetV1AnalyzeParams, reqEditors ...RequestEditorFn) (*GetV1AnalyzeResponse, error) {
+	rsp, err := c.GetV1Analyze(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetV1AnalyzeResponse(rsp)
+}
+
+// PostV1AnalyzeWithBodyWithResponse request with arbitrary body returning *PostV1AnalyzeResponse
+func (c *ClientWithResponses) PostV1AnalyzeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostV1AnalyzeResponse, error) {
+	rsp, err := c.PostV1AnalyzeWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostV1AnalyzeResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostV1AnalyzeWithResponse(ctx context.Context, body PostV1AnalyzeJSONRequestBody, reqEditors ...RequestEditorFn) (*PostV1AnalyzeResponse, error) {
+	rsp, err := c.PostV1Analyze(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostV1AnalyzeResponse(rsp)
 }
 
 // PostV1CrawlWithBodyWithResponse request with arbitrary body returning *PostV1CrawlResponse
@@ -1682,32 +1667,6 @@ func (c *ClientWithResponses) GetV1ScrapeWithResponse(ctx context.Context, param
 	return ParseGetV1ScrapeResponse(rsp)
 }
 
-// GetV1ScreenshotsWithResponse request returning *GetV1ScreenshotsResponse
-func (c *ClientWithResponses) GetV1ScreenshotsWithResponse(ctx context.Context, params *GetV1ScreenshotsParams, reqEditors ...RequestEditorFn) (*GetV1ScreenshotsResponse, error) {
-	rsp, err := c.GetV1Screenshots(ctx, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetV1ScreenshotsResponse(rsp)
-}
-
-// PostV1ScreenshotsWithBodyWithResponse request with arbitrary body returning *PostV1ScreenshotsResponse
-func (c *ClientWithResponses) PostV1ScreenshotsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostV1ScreenshotsResponse, error) {
-	rsp, err := c.PostV1ScreenshotsWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostV1ScreenshotsResponse(rsp)
-}
-
-func (c *ClientWithResponses) PostV1ScreenshotsWithResponse(ctx context.Context, body PostV1ScreenshotsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostV1ScreenshotsResponse, error) {
-	rsp, err := c.PostV1Screenshots(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostV1ScreenshotsResponse(rsp)
-}
-
 // ParseGetInternalHealthResponse parses an HTTP response from a GetInternalHealthWithResponse call
 func ParseGetInternalHealthResponse(rsp *http.Response) (*GetInternalHealthResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -1719,6 +1678,76 @@ func ParseGetInternalHealthResponse(rsp *http.Response) (*GetInternalHealthRespo
 	response := &GetInternalHealthResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseGetV1AnalyzeResponse parses an HTTP response from a GetV1AnalyzeWithResponse call
+func ParseGetV1AnalyzeResponse(rsp *http.Response) (*GetV1AnalyzeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetV1AnalyzeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest struct {
+			union json.RawMessage
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostV1AnalyzeResponse parses an HTTP response from a PostV1AnalyzeWithResponse call
+func ParsePostV1AnalyzeResponse(rsp *http.Response) (*PostV1AnalyzeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostV1AnalyzeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest struct {
+			union json.RawMessage
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
 	}
 
 	return response, nil
@@ -1958,72 +1987,6 @@ func ParseGetV1ScrapeResponse(rsp *http.Response) (*GetV1ScrapeResponse, error) 
 			return nil, err
 		}
 		response.JSON500 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetV1ScreenshotsResponse parses an HTTP response from a GetV1ScreenshotsWithResponse call
-func ParseGetV1ScreenshotsResponse(rsp *http.Response) (*GetV1ScreenshotsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetV1ScreenshotsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ScreenshotGetResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest NotFound
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON404 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParsePostV1ScreenshotsResponse parses an HTTP response from a PostV1ScreenshotsWithResponse call
-func ParsePostV1ScreenshotsResponse(rsp *http.Response) (*PostV1ScreenshotsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PostV1ScreenshotsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ScreenshotJobResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest BadRequest
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
 
 	}
 

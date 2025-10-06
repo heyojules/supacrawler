@@ -1,11 +1,11 @@
 package server
 
 import (
-	"scraper/internal/core/crawl"
+	"scraper/internal/core/analyzer"
+	"scraper/internal/core/crawler"
 	"scraper/internal/core/job"
 	"scraper/internal/core/mapper"
-	"scraper/internal/core/scrape"
-	"scraper/internal/core/screenshot"
+	"scraper/internal/core/scraper"
 	"scraper/internal/health"
 	"scraper/internal/platform/redis"
 	tasks "scraper/internal/platform/tasks"
@@ -14,13 +14,13 @@ import (
 )
 
 type Dependencies struct {
-	Job        *job.JobService
-	Crawl      *crawl.CrawlService
-	Scrape     *scrape.Service
-	Map        *mapper.Service
-	Screenshot *screenshot.Service
-	Tasks      *tasks.Client
-	Redis      *redis.Service
+	Job      *job.JobService
+	Crawler  *crawler.CrawlerService
+	Scraper  *scraper.ScraperService
+	Map      *mapper.Service
+	Analyzer *analyzer.Service
+	Tasks    *tasks.Client
+	Redis    *redis.Service
 }
 
 func RegisterRoutes(app *fiber.App, d Dependencies) *health.HealthHandler {
@@ -30,16 +30,20 @@ func RegisterRoutes(app *fiber.App, d Dependencies) *health.HealthHandler {
 
 	api := app.Group("/v1")
 
-	scrapeHandler := scrape.NewHandler(d.Scrape, d.Map)
-	api.Get("/scrape", scrapeHandler.HandleGetScrape)
+	scraperHandler := scraper.NewScraperHandler(d.Scraper, d.Map)
+	api.Get("/scrape", scraperHandler.HandleGetScrape)
 
-	crawlHandler := crawl.NewCrawlHandler(d.Job, d.Crawl)
-	api.Post("/crawl", crawlHandler.HandleCreateCrawl)
-	api.Get("/crawl/:jobId", crawlHandler.HandleGetCrawl)
+	crawlerHandler := crawler.NewCrawlerHandler(d.Job, d.Crawler)
+	api.Post("/crawl", crawlerHandler.HandleCreateCrawl)
+	api.Get("/crawl/:jobId", crawlerHandler.HandleGetCrawl)
 
-	screenshotHandler := screenshot.NewHandler(d.Screenshot, d.Tasks, d.Job)
-	api.Post("/screenshots", screenshotHandler.HandleCreate)
-	api.Get("/screenshots", screenshotHandler.HandleGet)
+	analyzerHandler := analyzer.NewHandler(d.Analyzer, d.Tasks, d.Job)
+	api.Post("/analyze", analyzerHandler.HandleCreateAnalyze)
+	api.Get("/analyze", analyzerHandler.HandleGetAnalyze)
+
+	// Keep old screenshot endpoints for backward compatibility
+	api.Post("/screenshots", analyzerHandler.HandleCreate)
+	api.Get("/screenshots", analyzerHandler.HandleGet)
 
 	return healthHandler
 }

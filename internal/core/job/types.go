@@ -40,8 +40,8 @@ type JobResult struct {
 }
 
 type ScreenshotResult struct {
-	URL       string                       `json:"url"`
-	Path      string                       `json:"path"`
-	PublicURL string                       `json:"public_url"`
-	Metadata  engineapi.ScreenshotMetadata `json:"metadata"`
+	URL       string      `json:"url"`
+	Path      string      `json:"path"`
+	PublicURL string      `json:"public_url"`
+	Metadata  interface{} `json:"metadata,omitempty"`
 }

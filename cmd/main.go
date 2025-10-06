@@ -14,11 +14,11 @@ import (
 	"github.com/hibiken/asynq"
 
 	"scraper/internal/config"
-	"scraper/internal/core/crawl"
+	"scraper/internal/core/analyzer"
+	"scraper/internal/core/crawler"
 	"scraper/internal/core/job"
 	"scraper/internal/core/mapper"
-	"scraper/internal/core/scrape"
-	"scraper/internal/core/screenshot"
+	"scraper/internal/core/scraper"
 	"scraper/internal/logger"
 	rds "scraper/internal/platform/redis"
 	tasks "scraper/internal/platform/tasks"
@@ -52,18 +52,19 @@ func main() {
 
 	// Core services
 	jobSvc := job.NewJobService(redisSvc)
+
 	mapSvc := mapper.NewMapService()
-	scrapeSvc := scrape.NewScrapeService(redisSvc)
-	crawlSvc := crawl.NewCrawlService(jobSvc, taskClient, mapSvc, scrapeSvc, cfg)
-	screenshotSvc, err := screenshot.New(cfg, jobSvc)
+	scraperSvc := scraper.NewScraperService(redisSvc)
+	crawlerSvc := crawler.NewCrawlerService(jobSvc, taskClient, mapSvc, scraperSvc, cfg)
+	analyzerSvc, err := analyzer.New(cfg, jobSvc)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Worker mux
 	mux := worker.NewMux()
-	mux.HandleFunc(tasks.TaskTypeCrawl, crawlSvc.HandleCrawlTask)
-	mux.HandleFunc(screenshot.TaskTypeScreenshot, screenshotSvc.HandleTask)
+	mux.HandleFunc(tasks.TaskTypeCrawl, crawlerSvc.HandleCrawlTask)
+	mux.HandleFunc(analyzer.TaskTypeAnalyze, analyzerSvc.HandleTask)
 
 	// Start worker
 	_, workerCancel := context.WithCancel(context.Background())
@@ -91,13 +92,13 @@ func main() {
 
 	// Register routes with health handler
 	deps := server.Dependencies{
-		Job:        jobSvc,
-		Crawl:      crawlSvc,
-		Scrape:     scrapeSvc,
-		Map:        mapSvc,
-		Screenshot: screenshotSvc,
-		Tasks:      taskClient,
-		Redis:      redisSvc,
+		Job:      jobSvc,
+		Crawler:  crawlerSvc,
+		Scraper:  scraperSvc,
+		Map:      mapSvc,
+		Analyzer: analyzerSvc,
+		Tasks:    taskClient,
+		Redis:    redisSvc,
 	}
 	healthHandler := server.RegisterRoutes(app, deps)
 
@@ -115,6 +116,12 @@ func main() {
 		logr.LogInfo("Shutting down...")
 		workerCancel()
 		asynqServer.Shutdown()
+
+		// Close analyzer service browser
+		if err := analyzerSvc.Close(); err != nil {
+			logr.LogWarnf("Error closing analyzer service: %v", err)
+		}
+
 		_ = app.ShutdownWithTimeout(5 * time.Second)
 	}()
 

@@ -2,16 +2,15 @@ openapi: 3.0.3
 info:
   title: Supacrawler Scraper Engine API
   version: 0.1.0
-  description: HTTP API for scraping, mapping, crawling, and screenshots
+  description: HTTP API for scraping, mapping, crawling, and Google Trends analysis
 servers:
 - url: http://localhost:8081
   description: Local engine
 tags:
 - name: health
 - name: scrape
-- name: parse
 - name: jobs
-- name: screenshots
+- name: analyze
 paths:
   /internal/health:
     get:
@@ -214,28 +213,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ParseExamplesResponse'
-  /v1/screenshots:
+  /v1/analyze:
     post:
-      tags: [ screenshots ]
-      summary: Create a screenshot job or stream sync file
+      tags: [ analyze ]
+      summary: Analyze Google Trends for a keyword
+      description: Perform detailed Google Trends analysis for a specific keyword, including search interest, related queries, rising queries, and regional data
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ScreenshotCreateRequest'
+              $ref: '#/components/schemas/GoogleTrendsRequest'
       responses:
         '200':
-          description: Screenshot job created or image streamed
+          description: Keyword analysis data or job queued
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ScreenshotJobResponse'
+                oneOf:
+                - $ref: '#/components/schemas/AnalyzeResponse'
+                - $ref: '#/components/schemas/GoogleTrendsJobResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
     get:
-      tags: [ screenshots ]
-      summary: Get screenshot artifact by job id
+      tags: [ analyze ]
+      summary: Get keyword analysis job status/results
       parameters:
       - in: query
         name: job_id
@@ -244,11 +246,13 @@ paths:
           type: string
       responses:
         '200':
-          description: Screenshot content or URL
+          description: Analysis data or job status
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ScreenshotGetResponse'
+                oneOf:
+                - $ref: '#/components/schemas/AnalyzeResponse'
+                - $ref: '#/components/schemas/GoogleTrendsStatusResponse'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -699,149 +703,111 @@ components:
           description: Example output specifications
       required: [ success, examples ]
 
-    ScreenshotCreateRequest:
+    GoogleTrendsRequest:
       type: object
       properties:
-        url:
+        keyword:
           type: string
-          format: uri
-        full_page:
-          type: boolean
-        format:
+          description: Keyword or title to analyze trends for
+          example: "artificial intelligence"
+        country:
           type: string
-          enum: [ png, jpeg, jpg, webp ]
-        width:
+          description: Country code (e.g., "US", "IN", "GB") or name (optional, auto-inferred from keyword)
+          example: "US"
+        hours:
           type: integer
-        height:
+          description: Time range in hours (optional, default 24)
+          minimum: 1
+          example: 24
+        limit:
           type: integer
-        quality:
-          type: integer
+          description: Maximum number of results to return (optional, default 25)
           minimum: 1
           maximum: 100
-        device:
-          type: string
-          enum: [ desktop, mobile, tablet, custom ]
-        wait_until:
-          type: string
-          enum: [ load, domcontentloaded, networkidle ]
-        timeout:
-          type: integer
-          minimum: 5
-          maximum: 120
-        dark_mode:
-          type: boolean
-        delay:
-          type: integer
-          minimum: 0
-          maximum: 30
-        wait_for_selector:
-          type: string
-        click_selector:
-          type: string
-        hide_selectors:
-          type: array
-          items:
-            type: string
-        block_ads:
-          type: boolean
-        block_cookies:
-          type: boolean
-        block_chats:
-          type: boolean
-        block_trackers:
-          type: boolean
-        block_resources:
-          type: array
-          items:
-            type: string
-            enum: [ image, stylesheet, script, font ]
-        user_agent:
-          type: string
-        headers:
-          type: object
-          additionalProperties:
-            type: string
-        cookies:
-          type: array
-          items:
-            type: object
-        reduced_motion:
-          type: boolean
-        high_contrast:
-          type: boolean
-        disable_js:
-          type: boolean
-        print_mode:
-          type: boolean
-        ignore_https:
-          type: boolean
-        device_scale:
-          type: number
-        is_mobile:
-          type: boolean
-        has_touch:
-          type: boolean
-        is_landscape:
-          type: boolean
-        stream:
-          type: boolean
-      required: [ url ]
+          example: 25
+      required: [ keyword ]
 
-    ScreenshotJobResponse:
+    AnalyzeResponse:
       type: object
       properties:
         success:
           type: boolean
-        job_id:
+          description: Whether the scraping was successful
+        country:
           type: string
-        type:
+          description: Country code used for scraping
+        time_range:
           type: string
-          enum: [ screenshot ]
-        status:
+          description: Time range string (e.g., "24h")
+        total_trends:
+          type: integer
+          description: Total number of trends found
+        scraping_duration:
           type: string
-          enum: [ processing, completed, failed ]
-        url:
+          description: Time taken to scrape (e.g., "1500ms")
+        scraped_at:
           type: string
-        metadata:
-          $ref: '#/components/schemas/ScreenshotMetadata'
-      required: [ success, job_id ]
+          format: date-time
+          description: When the data was scraped
+        trends:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrendData'
+          description: List of trending topics
+        error:
+          type: string
+          description: Error message if scraping failed
+      required: [ success, country, time_range, total_trends, scraped_at ]
 
-    ScreenshotGetResponse:
+    TrendData:
+      type: object
+      properties:
+        rank:
+          type: integer
+          description: Trend ranking position
+        title:
+          type: string
+          description: Trend title/topic
+        country:
+          type: string
+          description: Country code
+        time_range:
+          type: string
+          description: Time range (e.g., "24h")
+        scraped_at:
+          type: string
+          format: date-time
+          description: When this trend was scraped
+      required: [ rank, title, country, time_range, scraped_at ]
+
+    GoogleTrendsJobResponse:
       type: object
       properties:
         success:
           type: boolean
+          description: Whether the job was queued successfully
         job_id:
           type: string
-        url:
+          description: Unique job identifier
+        message:
           type: string
-          description: Source URL of the page
-        screenshot:
+          description: Status message
+      required: [ success, job_id, message ]
+
+    GoogleTrendsStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Whether the request was successful
+        job_id:
           type: string
-          description: Signed or public URL to the image
+          description: Job identifier
         status:
           type: string
           enum: [ processing, completed, failed ]
-        metadata:
-          $ref: '#/components/schemas/ScreenshotMetadata'
-      required: [ success ]
-
-    ScreenshotMetadata:
-      type: object
-      properties:
-        width:
-          type: integer
-        height:
-          type: integer
-        format:
+          description: Current job status
+        message:
           type: string
-        quality:
-          type: integer
-        file_size:
-          type: integer
-        load_time:
-          type: integer
-        device:
-          type: string
-        device_scale:
-          type: number
+          description: Additional status information
+      required: [ success, job_id, status ]

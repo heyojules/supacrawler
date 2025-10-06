@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"scraper/internal/core/scrape/robots"
+	"scraper/internal/core/scraper/robots"
 	"scraper/internal/logger"
 
 	"github.com/gocolly/colly"

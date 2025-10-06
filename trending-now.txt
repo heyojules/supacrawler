@@ -1,0 +1,25 @@
+Trend	Search Volume	Growth	When	Status / Duration	Notes
+amd stock	50K+	🔼 1,000%	2 hours ago	🟢 Active	+7 more
+cash app class action lawsuit settlement	50K+	🔼 700%	yesterday	🟢 Active	—
+xbox game pass	200K+	🔼 300%	4 days ago	⏱️ Lasted 4 days 22 hrs	+16 more
+comet ai browser	50K+	🔼 200%	3 days ago	⏱️ Lasted 3 days 18 hrs	—
+xbox	100K+	🔼 75%	4 days ago	⏱️ Lasted 4 days 22 hrs	+1 more
+snapchat charging for memories	10K+	🔼 100%	4 days ago	⏱️ Lasted 1 day 9 hrs	+2 more
+strava sues garmin lawsuit	5K+	🔼 300%	3 days ago	⏱️ Lasted 8 hrs	—
+duraludon pokemon go	5K+	🔼 50%	6 days ago	⏱️ Lasted 22 hrs	—
+anthropic	5K+	🔼 50%	6 days ago	⏱️ Lasted 1 day	—
+att outage	5K+	🔼 50%	5 days ago	⏱️ Lasted 8 hrs	+1 more
+klarna	2K+	🔼 50%	2 days ago	⏱️ Lasted 1 hr	—
+mx master 4	2K+	🔼 50%	6 days ago	⏱️ Lasted 5 hrs	—
+xiaomi	500+	🔼 75%	6 days ago	⏱️ Lasted 5 hrs	—
+jeff bezos	100+	🔼 50%	yesterday	⏱️ Lasted 50 min	—
+neil patrick harris	1K+	🔼 50%	6 days ago	⏱️ Lasted 3 hrs	—
+openai stock	500+	🔼 200%	4 days ago	⏱️ Lasted 40 min	—
+people	1K+	🔼 50%	6 days ago	⏱️ Lasted 50 min	—
+play store	200+	🔼 50%	yesterday	⏱️ Lasted 20 min	—
+tv deals	200+	🔼 100%	6 days ago	⏱️ Lasted 1 hr	—
+google pay	200+	🔼 50%	6 days ago	⏱️ Lasted 1 hr	—
+kindle	100+	🔼 100%	6 days ago	⏱️ Lasted 1 hr	—
+smart	100+	🔼 100%	6 days ago	⏱️ Lasted 1 hr	—
+amd stock price	100+	🔼 50%	3 days ago	⏱️ Lasted 20 min	—
+huawei	100+	🔼 50%	6 days ago	⏱️ Lasted 20 min	—

@@ -4,15 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"scraper/internal/config"
 	"scraper/internal/core/job"
 	"scraper/internal/logger"
-	"scraper/internal/platform/engineapi"
 	tasks "scraper/internal/platform/tasks"
 
 	"github.com/gofiber/fiber/v2/utils"
@@ -21,13 +18,52 @@ import (
 )
 
 type Service struct {
-	log  *logger.Logger
-	cfg  config.Config
-	jobs *job.JobService
+	log            *logger.Logger
+	cfg            config.Config
+	jobs           *job.JobService
+	playwright     *playwright.Playwright
+	browser        playwright.Browser
+	rateLimitDelay time.Duration
+	maxRetries     int
 }
 
-// Use the generated OpenAPI type instead of custom struct
-type Request = engineapi.ScreenshotCreateRequest
+// GoogleTrendsRequest defines the request structure for Google Trends scraping
+type Request struct {
+	Country string `json:"country"`
+	Hours   int    `json:"hours"`
+	Limit   *int   `json:"limit,omitempty"`
+}
+
+// TrendData represents a single trending topic
+type TrendData struct {
+	Rank      int    `json:"rank"`
+	Title     string `json:"title"`
+	Country   string `json:"country"`
+	TimeRange string `json:"time_range"`
+	ScrapedAt string `json:"scraped_at"`
+}
+
+// TrendsResponse contains the scraped trends data
+type TrendsResponse struct {
+	Success          bool        `json:"success"`
+	Country          string      `json:"country"`
+	TimeRange        string      `json:"time_range"`
+	TotalTrends      int         `json:"total_trends"`
+	ScrapingDuration string      `json:"scraping_duration"`
+	ScrapedAt        string      `json:"scraped_at"`
+	Trends           []TrendData `json:"trends,omitempty"`
+	Error            *string     `json:"error,omitempty"`
+}
+
+// Country codes mapping
+var countryCodes = map[string]string{
+	"india":          "IN",
+	"us":             "US",
+	"uk":             "GB",
+	"in":             "IN",
+	"united states":  "US",
+	"united kingdom": "GB",
+}
 
 type Payload struct {
 	JobID   string  `json:"job_id"`
@@ -35,20 +71,70 @@ type Payload struct {
 	Request Request `json:"request"`
 }
 
-const TaskTypeScreenshot = "screenshot:task"
+const TaskTypeTrends = "trends:task"
 
 func New(cfg config.Config, jobs *job.JobService) (*Service, error) {
-	s := &Service{log: logger.New("ScreenshotService"), cfg: cfg, jobs: jobs}
+	s := &Service{
+		log:            logger.New("TrendsService"),
+		cfg:            cfg,
+		jobs:           jobs,
+		rateLimitDelay: 3 * time.Second, // 3 seconds between requests
+		maxRetries:     3,
+	}
+
+	// Initialize Playwright
+	runOptions := &playwright.RunOptions{
+		SkipInstallBrowsers: true,
+	}
+	pw, err := playwright.Run(runOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start playwright: %w", err)
+	}
+	s.playwright = pw
+
+	// Launch browser
+	browserOptions := playwright.BrowserTypeLaunchOptions{
+		Headless: playwright.Bool(true),
+		Args: []string{
+			"--no-sandbox",
+			"--disable-setuid-sandbox",
+			"--disable-dev-shm-usage",
+			"--disable-accelerated-2d-canvas",
+			"--no-first-run",
+			"--no-zygote",
+			"--disable-gpu",
+			"--disable-blink-features=AutomationControlled",
+			"--disable-extensions",
+		},
+	}
+	browser, err := (*s.playwright).Chromium.Launch(browserOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to launch browser: %w", err)
+	}
+	s.browser = browser
+
 	return s, nil
+}
+
+// Close cleans up browser resources
+func (s *Service) Close() error {
+	if s.browser != nil {
+		return s.browser.Close()
+	}
+	if s.playwright != nil {
+		(*s.playwright).Stop()
+	}
+	return nil
 }
 
 func (s *Service) Enqueue(ctx context.Context, t *tasks.Client, req Request) (string, error) {
 	jobID := utils.UUIDv4()
 	payload, _ := json.Marshal(Payload{JobID: jobID, Request: req})
-	if err := s.jobs.InitPending(ctx, jobID, job.TypeScreenshot, req.Url); err != nil {
+	countryDesc := req.Country + "_" + fmt.Sprintf("%dh", req.Hours)
+	if err := s.jobs.InitPending(ctx, jobID, job.TypeScreenshot, countryDesc); err != nil {
 		return "", err
 	}
-	task := asynq.NewTask(TaskTypeScreenshot, payload)
+	task := asynq.NewTask(TaskTypeTrends, payload)
 	if err := t.Enqueue(task, "default", s.cfg.TaskMaxRetries); err != nil {
 		return "", err
 	}
@@ -63,557 +149,295 @@ func (s *Service) HandleTask(ctx context.Context, task *asynq.Task) error {
 	if err := s.jobs.SetProcessing(ctx, p.JobID, job.TypeScreenshot); err != nil {
 		return err
 	}
-	// Force async save regardless of Stream setting for background tasks
-	req := p.Request
-	req.Stream = &[]bool{false}[0] // Create pointer to false
-	res, err := s.take(ctx, req)
+
+	_, err := s.scrapeTrends(ctx, p.Request)
 	if err != nil {
 		return s.jobs.Complete(ctx, p.JobID, job.TypeScreenshot, job.StatusFailed, nil)
 	}
-	jr := job.ScreenshotResult{URL: p.Request.Url, Path: res.Path, PublicURL: res.PublicURL, Metadata: res.Metadata}
+
+	// Store the trends result (using screenshot result structure for compatibility)
+	jr := job.ScreenshotResult{
+		URL:       p.Request.Country + "_" + fmt.Sprintf("%dh", p.Request.Hours),
+		Path:      "",
+		PublicURL: "",
+	}
 	return s.jobs.Complete(ctx, p.JobID, job.TypeScreenshot, job.StatusCompleted, jr)
 }
 
-type Result struct {
-	Path      string
-	PublicURL string
-	Metadata  engineapi.ScreenshotMetadata
+// scrapeTrends performs the actual Google Trends scraping
+func (s *Service) scrapeTrends(ctx context.Context, req Request) (*TrendsResponse, error) {
+	// Normalize country code
+	countryCode := s.normalizeCountryCode(req.Country)
+	limit := 25 // default
+	if req.Limit != nil && *req.Limit > 0 {
+		limit = *req.Limit
+	}
+
+	startTime := time.Now()
+	var lastErr error
+
+	// Retry logic
+	for attempt := 0; attempt < s.maxRetries; attempt++ {
+		page, err := s.browser.NewPage()
+		if err != nil {
+			lastErr = fmt.Errorf("failed to create page: %w", err)
+			continue
+		}
+
+		result, err := s.scrapeTrendsSingleAttempt(page, countryCode, req.Hours, limit)
+		page.Close()
+
+		if err == nil {
+			result.ScrapingDuration = fmt.Sprintf("%dms", time.Since(startTime).Milliseconds())
+			return result, nil
+		}
+
+		lastErr = err
+		s.log.LogWarnf("Scraping attempt %d failed: %v", attempt+1, err)
+
+		if attempt < s.maxRetries-1 {
+			time.Sleep(s.rateLimitDelay * time.Duration(attempt+1))
+		}
+	}
+
+	return nil, fmt.Errorf("failed to scrape trends after %d attempts: %w", s.maxRetries, lastErr)
 }
 
-func (s *Service) take(_ context.Context, r Request) (Result, error) {
-	// Use service helper methods for pointer dereferencing
-	// Set environment variable to prevent font loading delays
-	os.Setenv("PW_TEST_SCREENSHOT_NO_FONTS_READY", "1")
-	defer os.Unsetenv("PW_TEST_SCREENSHOT_NO_FONTS_READY")
+// scrapeTrendsSingleAttempt performs a single scraping attempt
+func (s *Service) scrapeTrendsSingleAttempt(page playwright.Page, geo string, hours, limit int) (*TrendsResponse, error) {
+	// Set user agent and headers
+	page.SetExtraHTTPHeaders(map[string]string{
+		"Accept-Language": "en-US,en;q=0.9",
+		"Accept-Encoding": "gzip, deflate, br",
+		"Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+	})
 
-	pw, err := playwright.Run()
-	if err != nil {
-		s.log.LogErrorf("Failed to start Playwright: %v", err)
-		return Result{}, fmt.Errorf("playwright initialization failed: %w", err)
-	}
-	defer pw.Stop()
-
-	// Build browser launch arguments
-	args := []string{
-		"--no-sandbox",
-		"--disable-dev-shm-usage", // Overcome limited resource problems
-		"--disable-gpu",
-		"--disable-web-security",
-		"--disable-features=VizDisplayCompositor",
+	if err := page.SetViewportSize(1920, 1080); err != nil {
+		return nil, fmt.Errorf("failed to set viewport: %w", err)
 	}
 
-	// Add additional args based on request options
-	if s.getBool(r.IgnoreHttps, false) {
-		args = append(args, "--ignore-certificate-errors", "--ignore-ssl-errors")
-	}
-	if s.getBool(r.DisableJs, false) {
-		args = append(args, "--disable-javascript")
-	}
+	url := fmt.Sprintf("https://trends.google.com/trending?geo=%s&hours=%d", geo, hours)
+	s.log.LogInfof("Navigating to: %s", url)
 
-	// Launch browser with optimized settings
-	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(true),
-		Args:     args,
+	_, err := page.Goto(url, playwright.PageGotoOptions{
+		WaitUntil: playwright.WaitUntilStateNetworkidle,
+		Timeout:   playwright.Float(60000),
 	})
 	if err != nil {
-		s.log.LogErrorf("Failed to launch browser: %v", err)
-		return Result{}, fmt.Errorf("browser launch failed: %w", err)
-	}
-	defer browser.Close()
-
-	// Configure device settings and context options
-	contextOptions := playwright.BrowserNewContextOptions{}
-
-	// Set device configuration
-	device := s.getString((*string)(r.Device), "desktop")
-	switch device {
-	case "mobile":
-		contextOptions.Viewport = &playwright.Size{Width: 375, Height: 667}
-		contextOptions.DeviceScaleFactor = playwright.Float(2.0)
-		contextOptions.IsMobile = playwright.Bool(true)
-		contextOptions.HasTouch = playwright.Bool(true)
-		if s.getString(r.UserAgent, "") == "" {
-			contextOptions.UserAgent = playwright.String("Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1")
-		}
-	case "tablet":
-		if s.getBool(r.IsLandscape, false) {
-			contextOptions.Viewport = &playwright.Size{Width: 1024, Height: 768}
-		} else {
-			contextOptions.Viewport = &playwright.Size{Width: 768, Height: 1024}
-		}
-		contextOptions.DeviceScaleFactor = playwright.Float(2.0)
-		contextOptions.IsMobile = playwright.Bool(true)
-		contextOptions.HasTouch = playwright.Bool(true)
-		if s.getString(r.UserAgent, "") == "" {
-			contextOptions.UserAgent = playwright.String("Mozilla/5.0 (iPad; CPU OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1")
-		}
-	case "desktop":
-		contextOptions.Viewport = &playwright.Size{Width: 1920, Height: 1080}
-		contextOptions.DeviceScaleFactor = playwright.Float(1.0)
-		contextOptions.IsMobile = playwright.Bool(false)
-		contextOptions.HasTouch = playwright.Bool(false)
-	case "custom":
-		width := s.getInt(r.Width, 1920)
-		height := s.getInt(r.Height, 1080)
-		if width > 0 && height > 0 {
-			contextOptions.Viewport = &playwright.Size{Width: width, Height: height}
-		}
-		if s.getFloat32(r.DeviceScale, 0) > 0 {
-			contextOptions.DeviceScaleFactor = playwright.Float(float64(s.getFloat32(r.DeviceScale, 1.0)))
-		}
-		contextOptions.IsMobile = playwright.Bool(s.getBool(r.IsMobile, false))
-		contextOptions.HasTouch = playwright.Bool(s.getBool(r.HasTouch, false))
-	default:
-		// Default to desktop
-		contextOptions.Viewport = &playwright.Size{Width: 1920, Height: 1080}
-		contextOptions.DeviceScaleFactor = playwright.Float(1.0)
+		return nil, fmt.Errorf("failed to navigate to Google Trends: %w", err)
 	}
 
-	// Apply accessibility and visual settings
-	if s.getBool(r.DarkMode, false) || s.getBool(r.ReducedMotion, false) || s.getBool(r.HighContrast, false) {
-		if s.getBool(r.DarkMode, false) {
-			contextOptions.ColorScheme = playwright.ColorSchemeDark
-		} else {
-			contextOptions.ColorScheme = playwright.ColorSchemeLight
-		}
-
-		if s.getBool(r.ReducedMotion, false) {
-			contextOptions.ReducedMotion = playwright.ReducedMotionReduce
-		}
-
-		// Force media for accessibility
-		if s.getBool(r.HighContrast, false) {
-			contextOptions.ForcedColors = playwright.ForcedColorsActive
-		} else {
-			contextOptions.ForcedColors = playwright.ForcedColorsNone
-		}
-	}
-
-	// Set custom user agent if provided
-	if s.getString(r.UserAgent, "") != "" {
-		contextOptions.UserAgent = playwright.String(s.getString(r.UserAgent, ""))
-	}
-
-	// Set custom headers if provided
-	headers := s.getStringMap(r.Headers, nil)
-	if len(headers) > 0 {
-		contextOptions.ExtraHttpHeaders = headers
-	}
-
-	// Ignore HTTPS errors if requested
-	if s.getBool(r.IgnoreHttps, false) {
-		contextOptions.IgnoreHttpsErrors = playwright.Bool(true)
-	}
-
-	// Set print mode if requested
-	if s.getBool(r.PrintMode, false) {
-		contextOptions.ColorScheme = playwright.ColorSchemeNoPreference
-	}
-
-	// Create browser context with all options
-	ctx, err := browser.NewContext(contextOptions)
+	// Wait for table to load
+	_, err = page.WaitForSelector("table", playwright.PageWaitForSelectorOptions{
+		Timeout: playwright.Float(30000),
+	})
 	if err != nil {
-		s.log.LogErrorf("Failed to create browser context: %v", err)
-		return Result{}, fmt.Errorf("browser context creation failed: %w", err)
+		return nil, fmt.Errorf("failed to find trends table: %w", err)
 	}
-	defer ctx.Close()
 
-	// Set up resource blocking if needed
-	var blockResources []string
-	if r.BlockResources != nil {
-		for _, resource := range *r.BlockResources {
-			blockResources = append(blockResources, string(resource))
-		}
-	}
-	if s.getBool(r.BlockAds, false) || s.getBool(r.BlockCookies, false) || s.getBool(r.BlockChats, false) || s.getBool(r.BlockTrackers, false) || len(blockResources) > 0 {
-		if err := ctx.Route("**/*", func(route playwright.Route) {
-			url := route.Request().URL()
-			resourceType := route.Request().ResourceType()
+	// Additional wait for dynamic content
+	time.Sleep(5 * time.Second)
 
-			// Block based on URL patterns
-			if s.getBool(r.BlockAds, false) && s.isAdUrl(url) {
-				route.Abort("blockedbyclient")
-				return
-			}
-			if s.getBool(r.BlockCookies, false) && s.isCookieUrl(url) {
-				route.Abort("blockedbyclient")
-				return
-			}
-			if s.getBool(r.BlockChats, false) && s.isChatUrl(url) {
-				route.Abort("blockedbyclient")
-				return
-			}
-			if s.getBool(r.BlockTrackers, false) && s.isTrackerUrl(url) {
-				route.Abort("blockedbyclient")
-				return
-			}
+	// Extract trends data
+	result, err := page.Evaluate(`
+		(limit, geo, hours) => {
+			const trends = [];
+			const debugInfo = [];
 
-			// Block based on resource types
-			for _, blocked := range blockResources {
-				if string(resourceType) == blocked {
-					route.Abort("blockedbyclient")
-					return
+			try {
+				debugInfo.push("Starting page evaluation...");
+
+				// Find tbody with trends data
+				const tbody = document.querySelector('tbody[jsname="cC57zf"]');
+				if (tbody) {
+					debugInfo.push('Found tbody with jsname="cC57zf"');
+					const rows = tbody.querySelectorAll("tr[jsname]");
+					debugInfo.push('Found ' + rows.length + ' trend rows in tbody');
+
+					rows.forEach((row, index) => {
+						if (trends.length >= limit) return;
+
+						try {
+							const tds = row.querySelectorAll("td");
+							debugInfo.push('Row ' + index + ': Found ' + tds.length + ' td elements');
+
+							if (tds.length >= 2) {
+								const secondTd = tds[1];
+
+								// Try multiple selectors for trend text
+								let trendText = null;
+
+								// Try div with class containing "mZ3RIc"
+								const mZ3RIcDiv = secondTd.querySelector('div[class*="mZ3RIc"]');
+								if (mZ3RIcDiv) {
+									trendText = mZ3RIcDiv.textContent.trim();
+									debugInfo.push('Row ' + index + ': Found mZ3RIc div with text: "' + trendText + '"');
+								}
+
+								// Fallback: try any div that's not a metadata div
+								if (!trendText) {
+									const divs = secondTd.querySelectorAll("div");
+									debugInfo.push('Row ' + index + ': Fallback - found ' + divs.length + ' divs in second td');
+
+									for (let i = 0; i < divs.length; i++) {
+										const div = divs[i];
+										const text = div.textContent.trim();
+										debugInfo.push('Row ' + index + ', Div ' + i + ': "' + text + '" (classes: "' + div.className + '")');
+
+										// Skip divs that contain metadata like "ago" or "searches"
+										if (text && text.length > 2 &&
+											!text.includes("ago") &&
+											!text.includes("searches") &&
+											!text.includes("24h") &&
+											!text.includes("48h") &&
+											!text.includes("7d") &&
+											!div.classList.contains("Rz403")) {
+											trendText = text;
+											debugInfo.push('Row ' + index + ': Selected trend text: "' + trendText + '"');
+											break;
+										}
+									}
+								}
+
+								if (trendText && trendText.length > 0) {
+									trends.push({
+										rank: index + 1,
+										title: trendText,
+										country: geo,
+										timeRange: hours + 'h',
+										scrapedAt: new Date().toISOString(),
+									});
+									debugInfo.push('Successfully added trend ' + (index + 1) + ': ' + trendText);
+								} else {
+									debugInfo.push('Row ' + index + ': No valid trend text found');
+								}
+							}
+						} catch (error) {
+							debugInfo.push('Error processing row ' + index + ': ' + error.message);
+						}
+					});
+				} else {
+					debugInfo.push('tbody with jsname="cC57zf" not found');
 				}
-			}
 
-			route.Continue()
-		}); err != nil {
-			s.log.LogWarnf("Failed to set up resource blocking: %v", err)
-		}
-	}
+				// Fallback methods if tbody approach didn't work
+				if (trends.length === 0) {
+					debugInfo.push("Trying alternative selectors...");
 
-	page, err := ctx.NewPage()
-	if err != nil {
-		s.log.LogErrorf("Failed to create page: %v", err)
-		return Result{}, fmt.Errorf("page creation failed: %w", err)
-	}
+					const alternativeSelectors = [
+						'table tr[jsname] td:nth-child(2) div[class*="mZ3RIc"]',
+						'table tr[jsname] td:nth-child(2) div:not([class*="Rz403"])',
+						"tr[jsname] td:nth-child(2) div",
+						'table tr td div[class*="mZ3RIc"]',
+						"tbody tr td:nth-child(2) div",
+					];
 
-	// Set cookies if provided
-	cookiesData := s.getCookies(r.Cookies, nil)
-	if len(cookiesData) > 0 {
-		cookies := make([]playwright.OptionalCookie, 0, len(cookiesData))
-		for _, cookieMap := range cookiesData {
-			if name, ok := cookieMap["name"].(string); ok {
-				if value, ok := cookieMap["value"].(string); ok {
-					cookie := playwright.OptionalCookie{
-						Name:  name,
-						Value: value,
+					for (const selector of alternativeSelectors) {
+						const elements = document.querySelectorAll(selector);
+						debugInfo.push('Selector "' + selector + '" found ' + elements.length + ' elements');
+
+						elements.forEach((element, index) => {
+							if (trends.length >= limit) return;
+
+							const text = element.textContent.trim();
+							debugInfo.push('Alternative selector element ' + index + ': "' + text + '"');
+
+							if (text && text.length > 2 &&
+								!text.includes("ago") &&
+								!text.includes("searches") &&
+								!text.includes("24h") &&
+								!text.includes("48h") &&
+								!text.includes("7d")) {
+								trends.push({
+									rank: trends.length + 1,
+									title: text,
+									country: geo,
+									timeRange: hours + 'h',
+									scrapedAt: new Date().toISOString(),
+								});
+								debugInfo.push('Alternative method found trend: ' + text);
+							}
+						});
+
+						if (trends.length > 0) {
+							debugInfo.push('Successfully found ' + trends.length + ' trends using selector: ' + selector);
+							break;
+						}
 					}
-					if domain, ok := cookieMap["domain"].(string); ok {
-						cookie.Domain = &domain
-					}
-					if path, ok := cookieMap["path"].(string); ok {
-						cookie.Path = &path
-					}
-					cookies = append(cookies, cookie)
 				}
+			} catch (error) {
+				debugInfo.push('Error in page evaluation: ' + error.message);
 			}
+
+			return {
+				trends: trends.slice(0, limit),
+				debugInfo: debugInfo,
+			};
 		}
-		if len(cookies) > 0 {
-			if err := ctx.AddCookies(cookies); err != nil {
-				s.log.LogWarnf("Failed to set cookies: %v", err)
-			}
-		}
-	}
+	`)
 
-	// JavaScript disabled at browser level if r.DisableJS is true
-	// No additional action needed here
-
-	// Set custom viewport if specified (override device defaults)
-	if s.getString((*string)(r.Device), "") == "custom" && s.getInt(r.Width, 0) > 0 && s.getInt(r.Height, 0) > 0 {
-		width := s.getInt(r.Width, 0)
-		height := s.getInt(r.Height, 0)
-		if err := page.SetViewportSize(width, height); err != nil {
-			s.log.LogWarnf("Failed to set viewport size %dx%d: %v", width, height, err)
-		}
-	}
-
-	// Configure navigation options based on request parameters
-	url := r.Url
-	s.log.LogDebugf("Navigating to URL: %s", url)
-
-	// Determine wait condition
-	waitUntil := playwright.WaitUntilStateDomcontentloaded // Default
-	waitUntilStr := s.getString((*string)(r.WaitUntil), "domcontentloaded")
-	switch waitUntilStr {
-	case "load":
-		waitUntil = playwright.WaitUntilStateLoad
-	case "domcontentloaded":
-		waitUntil = playwright.WaitUntilStateDomcontentloaded
-	case "networkidle":
-		waitUntil = playwright.WaitUntilStateNetworkidle
-	}
-
-	// Set timeout (default 30s, max from request or 30s)
-	timeout := 30000.0 // 30 seconds default
-	timeoutSeconds := s.getInt(r.Timeout, 0)
-	if timeoutSeconds > 0 {
-		timeout = float64(timeoutSeconds * 1000) // Convert seconds to milliseconds
-	}
-
-	gotoOptions := playwright.PageGotoOptions{
-		WaitUntil: waitUntil,
-		Timeout:   playwright.Float(timeout),
-	}
-
-	if _, err := page.Goto(url, gotoOptions); err != nil {
-		s.log.LogErrorf("Failed to navigate to %s: %v", url, err)
-		if strings.Contains(err.Error(), "timeout") {
-			return Result{}, fmt.Errorf("page load timeout: %w", err)
-		}
-		if strings.Contains(err.Error(), "net::") {
-			return Result{}, fmt.Errorf("network error accessing page: %w", err)
-		}
-		return Result{}, fmt.Errorf("navigation failed: %w", err)
-	}
-
-	// Wait for specific selector if requested
-	waitSelector := s.getString(r.WaitForSelector, "")
-	if waitSelector != "" {
-		s.log.LogDebugf("Waiting for selector: %s", waitSelector)
-		if err := page.Locator(waitSelector).WaitFor(playwright.LocatorWaitForOptions{
-			Timeout: playwright.Float(10000), // 10 second timeout for selector
-		}); err != nil {
-			s.log.LogWarnf("Selector wait failed: %v", err)
-		}
-	}
-
-	// Click element if requested
-	clickSelector := s.getString(r.ClickSelector, "")
-	if clickSelector != "" {
-		s.log.LogDebugf("Clicking selector: %s", clickSelector)
-		if err := page.Locator(clickSelector).Click(); err != nil {
-			s.log.LogWarnf("Click failed: %v", err)
-		}
-		// Wait a moment after clicking using page.WaitForLoadState
-		page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
-			State:   playwright.LoadStateNetworkidle,
-			Timeout: playwright.Float(3000),
-		})
-	}
-
-	// Hide elements if requested
-	hideSelectors := s.getStringSlice(r.HideSelectors, nil)
-	if len(hideSelectors) > 0 {
-		for _, selector := range hideSelectors {
-			s.log.LogDebugf("Hiding selector: %s", selector)
-			if _, err := page.EvaluateHandle(fmt.Sprintf(`
-				document.querySelectorAll('%s').forEach(el => el.style.display = 'none')
-			`, selector)); err != nil {
-				s.log.LogWarnf("Failed to hide selector %s: %v", selector, err)
-			}
-		}
-	}
-
-	// Additional delay if requested
-	delay := s.getInt(r.Delay, 0)
-	if delay > 0 {
-		s.log.LogDebugf("Additional delay: %d seconds", delay)
-		// Use WaitForLoadState with networkidle instead of arbitrary timeout
-		page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
-			State:   playwright.LoadStateNetworkidle,
-			Timeout: playwright.Float(float64(delay * 1000)),
-		})
-	} else {
-		// Default wait for dynamic content - wait for network to be idle
-		page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
-			State:   playwright.LoadStateNetworkidle,
-			Timeout: playwright.Float(5000), // 5 second max wait for network idle
-		})
-	}
-
-	// Configure screenshot options
-	// Use the same timeout as navigation, or default to 30 seconds
-	screenshotTimeout := timeout
-	if screenshotTimeout == 0 {
-		screenshotTimeout = 30000.0 // 30 seconds default
-	}
-
-	opts := playwright.PageScreenshotOptions{
-		FullPage: playwright.Bool(s.getBool(r.FullPage, false)),
-		Timeout:  playwright.Float(screenshotTimeout), // Use request timeout or 30s default
-	}
-
-	// Set image format and quality
-	format := s.getString((*string)(r.Format), "png")
-	switch strings.ToLower(format) {
-	case "jpeg", "jpg":
-		opts.Type = playwright.ScreenshotTypeJpeg
-		quality := s.getInt(r.Quality, 85)
-		if quality > 0 && quality <= 100 {
-			opts.Quality = &quality
-		} else {
-			// Default to 85% quality for JPEG
-			defaultQuality := 85
-			opts.Quality = &defaultQuality
-		}
-	case "webp":
-		// Note: WebP support might not be available in all Playwright versions
-		// Fallback to PNG for now
-		opts.Type = playwright.ScreenshotTypePng
-	default:
-		opts.Type = playwright.ScreenshotTypePng
-	}
-
-	s.log.LogDebugf("Taking screenshot with format %s, fullpage: %v", format, s.getBool(r.FullPage, false))
-	start := time.Now()
-	buf, err := page.Screenshot(opts)
 	if err != nil {
-		s.log.LogErrorf("Failed to capture screenshot: %v", err)
-		if strings.Contains(err.Error(), "timeout") {
-			return Result{}, fmt.Errorf("screenshot capture timeout: %w", err)
+		return nil, fmt.Errorf("failed to evaluate page: %w", err)
+	}
+
+	// Parse the result
+	resultMap, ok := result.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected result type from page evaluation")
+	}
+
+	trendsData, ok := resultMap["trends"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("no trends found in page evaluation result")
+	}
+
+	trends := make([]TrendData, 0, len(trendsData))
+	for _, t := range trendsData {
+		trendMap, ok := t.(map[string]interface{})
+		if !ok {
+			continue
 		}
-		return Result{}, fmt.Errorf("screenshot capture failed: %w", err)
+
+		rank, _ := trendMap["rank"].(float64)
+		title, _ := trendMap["title"].(string)
+		country, _ := trendMap["country"].(string)
+		timeRange, _ := trendMap["time_range"].(string)
+		scrapedAt, _ := trendMap["scrapedAt"].(string)
+
+		trends = append(trends, TrendData{
+			Rank:      int(rank),
+			Title:     title,
+			Country:   country,
+			TimeRange: timeRange,
+			ScrapedAt: scrapedAt,
+		})
 	}
 
-	// Validate screenshot buffer
-	if len(buf) == 0 {
-		s.log.LogError("Screenshot buffer is empty", nil)
-		return Result{}, fmt.Errorf("screenshot capture resulted in empty image")
+	if len(trends) == 0 {
+		return nil, fmt.Errorf("no trends found - page structure might have changed")
 	}
 
-	// Check for reasonable file size limits (warn if over 10MB)
-	fileSize := len(buf)
-	if fileSize > 10*1024*1024 {
-		s.log.LogWarnf("Large screenshot file size: %d bytes for URL %s", fileSize, url)
-	}
-
-	width := s.getInt(r.Width, 1920)
-	height := s.getInt(r.Height, 1080)
-	formatStr := strings.ToLower(string(*opts.Type))
-	load := int(time.Since(start).Milliseconds())
-
-	meta := engineapi.ScreenshotMetadata{
-		Width:    &width,
-		Height:   &height,
-		Format:   &formatStr,
-		FileSize: &fileSize,
-		LoadTime: &load,
-	}
-
-	s.log.LogDebugf("Screenshot captured: %dx%d, %s, %d bytes, %dms", width, height, formatStr, fileSize, load)
-
-	path, public, err := s.save(buf, r)
-	if err != nil {
-		s.log.LogErrorf("Failed to save screenshot: %v", err)
-		return Result{}, fmt.Errorf("screenshot save failed: %w", err)
-	}
-
-	s.log.LogInfof("Screenshot completed successfully for %s: %s", url, public)
-	return Result{Path: path, PublicURL: public, Metadata: meta}, nil
+	return &TrendsResponse{
+		Success:     true,
+		Country:     geo,
+		TimeRange:   fmt.Sprintf("%dh", hours),
+		TotalTrends: len(trends),
+		ScrapedAt:   time.Now().Format(time.RFC3339),
+		Trends:      trends,
+	}, nil
 }
 
-// Helper methods for safely dereferencing pointers
-func (s *Service) getBool(ptr *bool, def bool) bool {
-	if ptr == nil {
-		return def
+// normalizeCountryCode converts country names to country codes
+func (s *Service) normalizeCountryCode(country string) string {
+	country = strings.ToLower(strings.TrimSpace(country))
+	if code, exists := countryCodes[country]; exists {
+		return code
 	}
-	return *ptr
+	// If not found in map, assume it's already a valid code
+	return strings.ToUpper(country)
 }
 
-func (s *Service) getInt(ptr *int, def int) int {
-	if ptr == nil {
-		return def
-	}
-	return *ptr
-}
-
-func (s *Service) getString(ptr *string, def string) string {
-	if ptr == nil {
-		return def
-	}
-	return *ptr
-}
-
-func (s *Service) getFloat32(ptr *float32, def float32) float32 {
-	if ptr == nil {
-		return def
-	}
-	return *ptr
-}
-
-func (s *Service) getStringSlice(ptr *[]string, def []string) []string {
-	if ptr == nil {
-		return def
-	}
-	return *ptr
-}
-
-func (s *Service) getStringMap(ptr *map[string]string, def map[string]string) map[string]string {
-	if ptr == nil {
-		return def
-	}
-	return *ptr
-}
-
-func (s *Service) getCookies(ptr *[]map[string]interface{}, def []map[string]interface{}) []map[string]interface{} {
-	if ptr == nil {
-		return def
-	}
-	return *ptr
-}
-
-func (s *Service) save(data []byte, r Request) (string, string, error) {
-	// Create screenshots directory if it doesn't exist
-	_ = os.MkdirAll(filepath.Join(s.cfg.DataDir, "screenshots"), 0o755)
-
-	// Generate filename
-	format := s.getString((*string)(r.Format), "png")
-	name := time.Now().Format("20060102_150405") + "_" + sanitize(r.Url) + "." + strings.ToLower(format)
-	path := filepath.Join(s.cfg.DataDir, "screenshots", name)
-
-	// Write file
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return "", "", err
-	}
-
-	publicURL := "/files/screenshots/" + name
-	s.log.LogInfof("Screenshot saved locally: %s", path)
-	return path, publicURL, nil
-}
-
-func sanitize(u string) string {
-	replacer := strings.NewReplacer(":", "-", "/", "-", "?", "-", "&", "-", "=", "-", "#", "-", "%", "")
-	out := replacer.Replace(u)
-	if len(out) > 64 {
-		out = out[:64]
-	}
-	return out
-}
-
-// Helper functions for URL blocking
-func (s *Service) isAdUrl(url string) bool {
-	adPatterns := []string{
-		"googlesyndication.com", "doubleclick.net", "googleadservices.com", "googletag",
-		"amazon-adsystem.com", "facebook.com/plugins", "fbcdn.net", "outbrain.com",
-		"taboola.com", "adsystem.amazon", "googleads", "/ads/", "/ad?", "adsense",
-	}
-	for _, pattern := range adPatterns {
-		if strings.Contains(url, pattern) {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *Service) isCookieUrl(url string) bool {
-	cookiePatterns := []string{
-		"cookielaw.org", "onetrust.com", "quantcast.com", "cookiebot.com",
-		"trustarc.com", "cookie-consent", "gdpr", "/privacy", "/consent",
-	}
-	for _, pattern := range cookiePatterns {
-		if strings.Contains(url, pattern) {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *Service) isChatUrl(url string) bool {
-	chatPatterns := []string{
-		"intercom.io", "zendesk.com", "livechat.com", "drift.com", "helpscout.com",
-		"freshchat.com", "tawk.to", "crisp.chat", "messenger.com", "widget",
-		"/chat", "/support", "customer-service",
-	}
-	for _, pattern := range chatPatterns {
-		if strings.Contains(url, pattern) {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *Service) isTrackerUrl(url string) bool {
-	trackerPatterns := []string{
-		"google-analytics.com", "googletagmanager.com", "hotjar.com", "mixpanel.com",
-		"segment.com", "amplitude.com", "fullstory.com", "logrocket.com",
-		"mouseflow.com", "smartlook.com", "/analytics", "/tracking", "/metrics",
-		"facebook.com/tr", "linkedin.com/px", "twitter.com/i/adsct",
-	}
-	for _, pattern := range trackerPatterns {
-		if strings.Contains(url, pattern) {
-			return true
-		}
-	}
-	return false
+// ScrapeTrends scrapes Google Trends for a given country and time range
+func (s *Service) ScrapeTrends(ctx context.Context, req Request) (*TrendsResponse, error) {
+	return s.scrapeTrends(ctx, req)
 }
