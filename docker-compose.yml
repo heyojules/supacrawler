@@ -6,7 +6,10 @@ services:
     restart: unless-stopped
 
   supacrawler:
-    image: ghcr.io/supacrawler/supacrawler:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: supacrawler-dev:latest
     ports:
       - "8081:8081"
     environment:

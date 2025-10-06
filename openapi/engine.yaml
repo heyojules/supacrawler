@@ -4,18 +4,18 @@ info:
   version: 0.1.0
   description: HTTP API for scraping, mapping, crawling, and screenshots
 servers:
-  - url: http://localhost:8081
-    description: Local engine
+- url: http://localhost:8081
+  description: Local engine
 tags:
-  - name: health
-  - name: scrape
-  - name: parse
-  - name: jobs
-  - name: screenshots
+- name: health
+- name: scrape
+- name: parse
+- name: jobs
+- name: screenshots
 paths:
   /internal/health:
     get:
-      tags: [health]
+      tags: [ health ]
       summary: Health check
       responses:
         '200':
@@ -26,87 +26,87 @@ paths:
                 type: string
   /v1/scrape:
     get:
-      tags: [scrape]
+      tags: [ scrape ]
       summary: Scrape a single URL
       parameters:
-        - in: query
-          name: url
-          required: true
-          schema:
+      - in: query
+        name: url
+        required: true
+        schema:
+          type: string
+          format: uri
+      - in: query
+        name: format
+        schema:
+          type: string
+          enum: [ markdown, links ]
+      - in: query
+        name: depth
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: max_links
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: render_js
+        schema:
+          type: boolean
+      - in: query
+        name: include_html
+        schema:
+          type: boolean
+      - in: query
+        name: fresh
+        schema:
+          type: boolean
+      - in: query
+        name: proxy_mode
+        schema:
+          type: string
+          enum: [ off, shared_pool, residential ]
+          default: off
+      - in: query
+        name: proxy_region
+        schema:
+          type: string
+          description: ISO country code (e.g., "us", "eu", "gb")
+      - in: query
+        name: proxy_session
+        schema:
+          type: string
+          description: Sticky session key for proxy consistency
+      - in: query
+        name: rotate_user_agent
+        schema:
+          type: boolean
+          default: true
+      - in: query
+        name: enable_bot_protection
+        schema:
+          type: boolean
+          default: true
+      - in: query
+        name: max_consecutive_errors
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 5
+      - in: query
+        name: user_agent
+        schema:
+          type: string
+          description: Specific user agent to use (selected by backend)
+      - in: query
+        name: wait_for_selectors
+        schema:
+          type: array
+          items:
             type: string
-            format: uri
-        - in: query
-          name: format
-          schema:
-            type: string
-            enum: [markdown, links]
-        - in: query
-          name: depth
-          schema:
-            type: integer
-            minimum: 0
-        - in: query
-          name: max_links
-          schema:
-            type: integer
-            minimum: 0
-        - in: query
-          name: render_js
-          schema:
-            type: boolean
-        - in: query
-          name: include_html
-          schema:
-            type: boolean
-        - in: query
-          name: fresh
-          schema:
-            type: boolean
-        - in: query
-          name: proxy_mode
-          schema:
-            type: string
-            enum: [off, shared_pool, residential]
-            default: off
-        - in: query
-          name: proxy_region
-          schema:
-            type: string
-            description: ISO country code (e.g., "us", "eu", "gb")
-        - in: query
-          name: proxy_session
-          schema:
-            type: string
-            description: Sticky session key for proxy consistency
-        - in: query
-          name: rotate_user_agent
-          schema:
-            type: boolean
-            default: true
-        - in: query
-          name: enable_bot_protection
-          schema:
-            type: boolean
-            default: true
-        - in: query
-          name: max_consecutive_errors
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 20
-            default: 5
-        - in: query
-          name: user_agent
-          schema:
-            type: string
-            description: Specific user agent to use (selected by backend)
-        - in: query
-          name: wait_for_selectors
-          schema:
-            type: array
-            items:
-              type: string
-            description: CSS selectors to wait for before considering page loaded (for dynamic content)
+          description: CSS selectors to wait for before considering page loaded (for dynamic content)
       responses:
         '200':
           description: Scrape response
@@ -130,7 +130,7 @@ paths:
           $ref: '#/components/responses/InternalError'
   /v1/crawl:
     post:
-      tags: [jobs]
+      tags: [ jobs ]
       summary: Create a crawl job
       requestBody:
         required: true
@@ -149,14 +149,14 @@ paths:
           $ref: '#/components/responses/BadRequest'
   /v1/crawl/{jobId}:
     get:
-      tags: [jobs]
+      tags: [ jobs ]
       summary: Get crawl job status/result
       parameters:
-        - in: path
-          name: jobId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: jobId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Crawl job status
@@ -168,7 +168,7 @@ paths:
           $ref: '#/components/responses/NotFound'
   /v1/parse:
     post:
-      tags: [parse]
+      tags: [ parse ]
       summary: Parse HTML or Markdown content using LLM
       description: Extract structured data from HTML or Markdown content with customizable output schemas
       requestBody:
@@ -192,7 +192,7 @@ paths:
           $ref: '#/components/responses/InternalError'
   /v1/parse/templates:
     get:
-      tags: [parse]
+      tags: [ parse ]
       summary: Get available parse templates
       description: List all available prompt templates with descriptions and supported content types
       responses:
@@ -204,7 +204,7 @@ paths:
                 $ref: '#/components/schemas/ParseTemplatesResponse'
   /v1/parse/examples:
     get:
-      tags: [parse]
+      tags: [ parse ]
       summary: Get example output specifications
       description: Get example output schemas for different content types
       responses:
@@ -216,7 +216,7 @@ paths:
                 $ref: '#/components/schemas/ParseExamplesResponse'
   /v1/screenshots:
     post:
-      tags: [screenshots]
+      tags: [ screenshots ]
       summary: Create a screenshot job or stream sync file
       requestBody:
         required: true
@@ -234,14 +234,14 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
     get:
-      tags: [screenshots]
+      tags: [ screenshots ]
       summary: Get screenshot artifact by job id
       parameters:
-        - in: query
-          name: job_id
-          required: true
-          schema:
-            type: string
+      - in: query
+        name: job_id
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Screenshot content or URL
@@ -332,7 +332,7 @@ components:
           description: Number of links discovered
         metadata:
           $ref: '#/components/schemas/ScrapeMetadata'
-      required: [success, url, links, metadata]
+      required: [ success, url, links, metadata ]
 
     ScrapeMetadata:
       type: object
@@ -377,7 +377,7 @@ components:
           format: uri
         format:
           type: string
-          enum: [markdown, html]
+          enum: [ markdown, html ]
         depth:
           type: integer
         link_limit:
@@ -398,7 +398,7 @@ components:
           description: URL patterns to match (e.g., ["/blog/*", "/docs/*"])
         proxy_mode:
           type: string
-          enum: [off, shared_pool, residential]
+          enum: [ off, shared_pool, residential ]
           default: off
           description: Proxy rotation mode
         proxy_region:
@@ -438,7 +438,7 @@ components:
           additionalProperties:
             type: string
           description: Optional HTTP headers to include in webhook requests
-      required: [url]
+      required: [ url ]
 
     CrawlCreateResponse:
       type: object
@@ -447,7 +447,7 @@ components:
           type: boolean
         job_id:
           type: string
-      required: [success, job_id]
+      required: [ success, job_id ]
 
     CrawlStatusResponse:
       type: object
@@ -458,12 +458,12 @@ components:
           type: string
         status:
           type: string
-          enum: [pending, processing, completed, failed]
+          enum: [ pending, processing, completed, failed ]
         data:
           $ref: '#/components/schemas/CrawlJobData'
         error:
           type: string
-      required: [success, status]
+      required: [ success, status ]
 
     CrawlJobData:
       type: object
@@ -501,7 +501,7 @@ components:
         metadata:
           $ref: '#/components/schemas/PageMetadata'
           x-order: 4
-      required: [markdown, links, metadata]
+      required: [ markdown, links, metadata ]
 
     PageMetadata:
       type: object
@@ -571,11 +571,11 @@ components:
                       type: string
                     url:
                       type: string
-                  required: ["title", "date", "url"]
-            required: ["posts"]
+                  required: [ "title", "date", "url" ]
+            required: [ "posts" ]
         output_format:
           type: string
-          enum: [json, csv, markdown, xml, yaml]
+          enum: [ json, csv, markdown, xml, yaml ]
           default: json
           description: Preferred output format
         stream:
@@ -594,7 +594,7 @@ components:
           maximum: 100
           default: 10
           description: Maximum pages to process
-      required: [prompt]
+      required: [ prompt ]
 
     ParseResponse:
       type: object
@@ -606,7 +606,7 @@ components:
           description: Extracted data as JSON object, CSV string, or markdown
         workflow_status:
           type: string
-          enum: [analyzing, crawling, scraping, extracting, formatting, completed, failed]
+          enum: [ analyzing, crawling, scraping, extracting, formatting, completed, failed ]
           description: Current workflow stage
         pages_processed:
           type: integer
@@ -634,7 +634,7 @@ components:
         total_tokens:
           type: integer
           description: Total tokens consumed (input + output)
-      required: [success]
+      required: [ success ]
 
     ParseValidationResult:
       type: object
@@ -644,7 +644,7 @@ components:
           description: Whether the response is valid
         format:
           type: string
-          enum: [json, csv]
+          enum: [ json, csv ]
           description: Format of the response
         errors:
           type: array
@@ -662,7 +662,7 @@ components:
         column_count:
           type: integer
           description: CSV column count
-      required: [is_valid, format, errors]
+      required: [ is_valid, format, errors ]
 
     ParseTemplatesResponse:
       type: object
@@ -684,7 +684,7 @@ components:
           items:
             type: string
           description: Supported output formats
-      required: [success, templates, content_types, output_formats]
+      required: [ success, templates, content_types, output_formats ]
 
     ParseExamplesResponse:
       type: object
@@ -697,7 +697,7 @@ components:
             type: object
             additionalProperties: true
           description: Example output specifications
-      required: [success, examples]
+      required: [ success, examples ]
 
     ScreenshotCreateRequest:
       type: object
@@ -709,7 +709,7 @@ components:
           type: boolean
         format:
           type: string
-          enum: [png, jpeg, jpg, webp]
+          enum: [ png, jpeg, jpg, webp ]
         width:
           type: integer
         height:
@@ -720,10 +720,10 @@ components:
           maximum: 100
         device:
           type: string
-          enum: [desktop, mobile, tablet, custom]
+          enum: [ desktop, mobile, tablet, custom ]
         wait_until:
           type: string
-          enum: [load, domcontentloaded, networkidle]
+          enum: [ load, domcontentloaded, networkidle ]
         timeout:
           type: integer
           minimum: 5
@@ -754,7 +754,7 @@ components:
           type: array
           items:
             type: string
-            enum: [image, stylesheet, script, font]
+            enum: [ image, stylesheet, script, font ]
         user_agent:
           type: string
         headers:
@@ -785,7 +785,7 @@ components:
           type: boolean
         stream:
           type: boolean
-      required: [url]
+      required: [ url ]
 
     ScreenshotJobResponse:
       type: object
@@ -796,15 +796,15 @@ components:
           type: string
         type:
           type: string
-          enum: [screenshot]
+          enum: [ screenshot ]
         status:
           type: string
-          enum: [processing, completed, failed]
+          enum: [ processing, completed, failed ]
         url:
           type: string
         metadata:
           $ref: '#/components/schemas/ScreenshotMetadata'
-      required: [success, job_id]
+      required: [ success, job_id ]
 
     ScreenshotGetResponse:
       type: object
@@ -821,10 +821,10 @@ components:
           description: Signed or public URL to the image
         status:
           type: string
-          enum: [processing, completed, failed]
+          enum: [ processing, completed, failed ]
         metadata:
           $ref: '#/components/schemas/ScreenshotMetadata'
-      required: [success]
+      required: [ success ]
 
     ScreenshotMetadata:
       type: object
@@ -845,5 +845,3 @@ components:
           type: string
         device_scale:
           type: number
-
-

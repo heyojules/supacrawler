@@ -1,12 +1,9 @@
 package screenshot
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"mime"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,19 +15,15 @@ import (
 	"scraper/internal/platform/engineapi"
 	tasks "scraper/internal/platform/tasks"
 
-	"github.com/antoineross/supabase-go"
 	"github.com/gofiber/fiber/v2/utils"
 	"github.com/hibiken/asynq"
 	"github.com/playwright-community/playwright-go"
-	storage_go "github.com/supabase-community/storage-go"
 )
 
 type Service struct {
 	log  *logger.Logger
 	cfg  config.Config
 	jobs *job.JobService
-
-	supabaseClient *supabase.Client
 }
 
 // Use the generated OpenAPI type instead of custom struct
@@ -46,26 +39,6 @@ const TaskTypeScreenshot = "screenshot:task"
 
 func New(cfg config.Config, jobs *job.JobService) (*Service, error) {
 	s := &Service{log: logger.New("ScreenshotService"), cfg: cfg, jobs: jobs}
-
-	// In production, Supabase configuration is required
-	if cfg.AppEnv == "production" {
-		if cfg.SupabaseURL == "" || cfg.SupabaseServiceKey == "" || cfg.SupabaseBucket == "" {
-			return nil, fmt.Errorf("production environment requires Supabase configuration: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and SUPABASE_STORAGE_BUCKET must be set")
-		}
-	}
-
-	// Initialize supabase client if credentials provided
-	if cfg.SupabaseURL != "" && cfg.SupabaseServiceKey != "" {
-		client, err := supabase.NewClient(cfg.SupabaseURL, cfg.SupabaseServiceKey, nil)
-		if err != nil {
-			if cfg.AppEnv == "production" {
-				return nil, fmt.Errorf("failed to initialize Supabase client in production: %w", err)
-			}
-			s.log.LogWarnf("failed to initialize Supabase client: %v", err)
-		} else {
-			s.supabaseClient = client
-		}
-	}
 	return s, nil
 }
 
@@ -561,134 +534,22 @@ func (s *Service) getCookies(ptr *[]map[string]interface{}, def []map[string]int
 }
 
 func (s *Service) save(data []byte, r Request) (string, string, error) {
-	// Debug: Check Supabase configuration
-	s.log.LogInfof("🔍 Supabase config check:")
-	s.log.LogInfof("  - Client initialized: %v", s.supabaseClient != nil)
-	s.log.LogInfof("  - Bucket: '%s'", s.cfg.SupabaseBucket)
-	s.log.LogInfof("  - URL set: %v", s.cfg.SupabaseURL != "")
-	s.log.LogInfof("  - ServiceKey set: %v", s.cfg.SupabaseServiceKey != "")
-	s.log.LogInfof("  - App Environment: %s", s.cfg.AppEnv)
-
-	// If supabase configured, upload to bucket and return signed URL
-	if s.supabaseClient != nil && s.cfg.SupabaseBucket != "" && s.cfg.SupabaseURL != "" && s.cfg.SupabaseServiceKey != "" {
-		s.log.LogDebugf("Attempting Supabase upload...")
-		name := time.Now().Format("20060102_150405") + "_" + sanitize(r.Url) + "." + strings.ToLower(s.getString((*string)(r.Format), "png"))
-		bucketPath := filepath.ToSlash(filepath.Join("screenshots", name))
-
-		// Determine mime type from filename extension
-		mimeType := mime.TypeByExtension(filepath.Ext(bucketPath))
-		if mimeType == "" {
-			format := s.getString((*string)(r.Format), "png")
-			if strings.EqualFold(format, "jpeg") || strings.EqualFold(format, "jpg") {
-				mimeType = "image/jpeg"
-			} else {
-				mimeType = "image/png"
-			}
-		}
-
-		reader := bytes.NewReader(data)
-		if _, err := s.supabaseClient.Storage.UploadFile(s.cfg.SupabaseBucket, bucketPath, reader, storage_go.FileOptions{ContentType: &mimeType}); err != nil {
-			s.log.LogWarnf("Supabase upload failed: %v", err)
-			// In production, return error instead of falling back to local storage
-			if s.cfg.AppEnv == "production" {
-				return "", "", fmt.Errorf("failed to upload screenshot to Supabase storage in production: %w", err)
-			}
-			// Fallback to local file on upload failure for non-production
-			goto LOCAL
-		}
-		s.log.LogDebugf("Supabase upload successful, creating signed URL...")
-
-		// Create signed URL - you can switch between methods here
-		signed, err := s.createSignedURLWorkaround(s.cfg.SupabaseBucket, bucketPath, 15*60)
-
-		if err != nil {
-			s.log.LogWarnf("Supabase signed URL creation failed: %v", err)
-			// In production, return error instead of falling back to local storage
-			if s.cfg.AppEnv == "production" {
-				return "", "", fmt.Errorf("failed to create signed URL for screenshot in production: %w", err)
-			}
-			// Fallback to local file on sign failure for non-production
-			goto LOCAL
-		}
-		s.log.LogInfof("Successfully created Supabase signed URL: %s", signed)
-		return "", signed, nil
-	} else {
-		s.log.LogWarnf("Supabase not configured properly, using local storage fallback")
-	}
-
-	// In production, if Supabase is not configured, return error
-	if s.cfg.AppEnv == "production" {
-		return "", "", fmt.Errorf("supabase storage is required in production environment")
-	}
-
-LOCAL:
-	// Local-only fallback (only allowed in non-production environments)
+	// Create screenshots directory if it doesn't exist
 	_ = os.MkdirAll(filepath.Join(s.cfg.DataDir, "screenshots"), 0o755)
-	name := time.Now().Format("20060102_150405") + "_" + sanitize(r.Url) + ".png"
+
+	// Generate filename
+	format := s.getString((*string)(r.Format), "png")
+	name := time.Now().Format("20060102_150405") + "_" + sanitize(r.Url) + "." + strings.ToLower(format)
 	path := filepath.Join(s.cfg.DataDir, "screenshots", name)
+
+	// Write file
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return "", "", err
 	}
-	return path, "/files/screenshots/" + name, nil
-}
 
-// createSignedURLWorkaround performs a direct REST call to sign objects with fresh headers
-func (s *Service) createSignedURLWorkaround(bucket string, objectPath string, expiresIn int) (string, error) {
-	if s.cfg.SupabaseURL == "" {
-		return "", fmt.Errorf("supabase URL not configured")
-	}
-	serviceKey := s.cfg.SupabaseServiceKey
-	if serviceKey == "" {
-		return "", fmt.Errorf("supabase service key not configured")
-	}
-
-	signURL := fmt.Sprintf("%s/storage/v1/object/sign/%s/%s", strings.TrimRight(s.cfg.SupabaseURL, "/"), bucket, objectPath)
-	body := map[string]int{"expiresIn": expiresIn}
-	buf := new(bytes.Buffer)
-	if err := json.NewEncoder(buf).Encode(body); err != nil {
-		return "", fmt.Errorf("failed to encode sign body: %w", err)
-	}
-
-	req, err := http.NewRequest(http.MethodPost, signURL, buf)
-	if err != nil {
-		return "", fmt.Errorf("failed to build sign request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+serviceKey)
-	req.Header.Set("apikey", serviceKey)
-
-	httpClient := &http.Client{Timeout: 15 * time.Second}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to request signed URL: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("failed to create signed URL: status %d", resp.StatusCode)
-	}
-
-	var signed struct {
-		SignedURL string `json:"signedURL"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&signed); err != nil {
-		return "", fmt.Errorf("failed to decode signed URL response: %w", err)
-	}
-
-	base := strings.TrimRight(s.cfg.SupabaseURL, "/")
-	path := signed.SignedURL
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-	if !strings.HasPrefix(path, "/storage/v1/") {
-		path = "/storage/v1" + path
-	}
-	finalURL := base + path
-	if s.cfg.AppEnv == "local" || s.cfg.AppEnv == "development" {
-		finalURL = strings.Replace(finalURL, "host.docker.internal", "127.0.0.1", 1)
-	}
-
-	s.log.LogDebugf("Workaround returned signed URL: %s", finalURL)
-	return finalURL, nil
+	publicURL := "/files/screenshots/" + name
+	s.log.LogInfof("Screenshot saved locally: %s", path)
+	return path, publicURL, nil
 }
 
 func sanitize(u string) string {

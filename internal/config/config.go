@@ -15,15 +15,6 @@ type Config struct {
 	RedisPassword string
 	DataDir       string
 
-	SupabaseURL        string
-	SupabaseServiceKey string
-	SupabaseBucket     string
-
-	LLMProvider      string
-	GeminiAPIKey     string
-	DefaultLLMModel  string
-	FallbackLLMModel string
-
 	TaskMaxRetries int
 
 	// System auth for backend webhooks
@@ -77,15 +68,6 @@ func Load() Config {
 		RedisAddr:     getenv("REDIS_ADDR", "127.0.0.1:6379"),
 		RedisPassword: os.Getenv("REDIS_PASSWORD"),
 		DataDir:       getenv("DATA_DIR", "./data"),
-
-		SupabaseURL:        os.Getenv("NEXT_PUBLIC_SUPABASE_URL"),
-		SupabaseServiceKey: getenvOrFile("SUPABASE_SERVICE_ROLE_KEY"),
-		SupabaseBucket:     getenv("SUPABASE_STORAGE_BUCKET", "screenshots"),
-
-		LLMProvider:      getenv("LLM_PROVIDER", "gemini"),
-		GeminiAPIKey:     getenvOrFile("GEMINI_API_KEY"),
-		DefaultLLMModel:  getenv("DEFAULT_LLM_MODEL", "gemini-1.5-flash"),
-		FallbackLLMModel: getenv("FALLBACK_LLM_MODEL", "gemini-1.5-pro"),
 
 		TaskMaxRetries: getenvInt("TASK_MAX_RETRIES", 3),
 
