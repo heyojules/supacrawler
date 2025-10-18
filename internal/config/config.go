@@ -19,6 +19,9 @@ type Config struct {
 
 	// System auth for backend webhooks
 	SystemAuthSecret string
+
+	// SEO API key
+	SEOApiKey string
 }
 
 func getenv(key, def string) string {
@@ -63,7 +66,7 @@ func getenvOrFile(key string) string {
 
 func Load() Config {
 	cfg := Config{
-		AppEnv:        getenv("APP_ENV", "development"),
+		AppEnv:        getenv("APP_ENV", "production"),
 		HTTPAddr:      getenv("HTTP_ADDR", ":8081"),
 		RedisAddr:     getenv("REDIS_ADDR", "127.0.0.1:6379"),
 		RedisPassword: os.Getenv("REDIS_PASSWORD"),
@@ -72,6 +75,7 @@ func Load() Config {
 		TaskMaxRetries: getenvInt("TASK_MAX_RETRIES", 3),
 
 		SystemAuthSecret: getenvOrFile("SYSTEM_AUTH_SECRET"),
+		SEOApiKey:        getenv("SEO_API_KEY", ""),
 	}
 	if cfg.RedisAddr == "" {
 		panic(fmt.Errorf("REDIS_ADDR is required"))

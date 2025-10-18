@@ -17,6 +17,7 @@ import (
 	"scraper/internal/core/analyzer"
 	"scraper/internal/core/crawler"
 	"scraper/internal/core/job"
+	"scraper/internal/core/keywords"
 	"scraper/internal/core/mapper"
 	"scraper/internal/core/scraper"
 	"scraper/internal/logger"
@@ -61,6 +62,13 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Keywords service - using the API key from environment
+	log.Printf("[main] SEO API Key length: %d", len(cfg.SEOApiKey))
+	if cfg.SEOApiKey == "" {
+		log.Printf("[main] WARNING: SEO_API_KEY is empty!")
+	}
+	keywordsSvc := keywords.NewService(cfg.SEOApiKey)
+
 	// Worker mux
 	mux := worker.NewMux()
 	mux.HandleFunc(tasks.TaskTypeCrawl, crawlerSvc.HandleCrawlTask)
@@ -97,6 +105,7 @@ func main() {
 		Scraper:  scraperSvc,
 		Map:      mapSvc,
 		Analyzer: analyzerSvc,
+		Keywords: keywordsSvc,
 		Tasks:    taskClient,
 		Redis:    redisSvc,
 	}

@@ -1,9 +1,11 @@
 package server
 
 import (
+	"fmt"
 	"scraper/internal/core/analyzer"
 	"scraper/internal/core/crawler"
 	"scraper/internal/core/job"
+	"scraper/internal/core/keywords"
 	"scraper/internal/core/mapper"
 	"scraper/internal/core/scraper"
 	"scraper/internal/health"
@@ -19,6 +21,7 @@ type Dependencies struct {
 	Scraper  *scraper.ScraperService
 	Map      *mapper.Service
 	Analyzer *analyzer.Service
+	Keywords *keywords.Service
 	Tasks    *tasks.Client
 	Redis    *redis.Service
 }
@@ -44,6 +47,13 @@ func RegisterRoutes(app *fiber.App, d Dependencies) *health.HealthHandler {
 	// Keep old screenshot endpoints for backward compatibility
 	api.Post("/screenshots", analyzerHandler.HandleCreate)
 	api.Get("/screenshots", analyzerHandler.HandleGet)
+
+	// Keywords endpoints
+	keywordsHandler := keywords.NewHandler(d.Keywords)
+	api.Post("/keywords/googleAds", keywordsHandler.HandleGoogleAdsKeywords)
+
+	// Debug: Log that keywords route is registered
+	fmt.Printf("[routes] Keywords route registered: POST /v1/keywords/googleAds\n")
 
 	return healthHandler
 }
